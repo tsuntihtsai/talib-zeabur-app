@@ -1,4 +1,3 @@
-Flask
+flask
 pandas
-pandas-ta
-TA-Lib
+git+https://github.com/twopirllc/pandas-ta.git
