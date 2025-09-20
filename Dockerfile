@@ -1,15 +1,13 @@
-# 使用輕量級 Python 基底映像
 FROM python:3.11-slim
 
-# 設定工作目錄
 WORKDIR /app
 
-# 複製需求檔並安裝
+# 安裝 git（必要，因為要從 GitHub 拉 pandas-ta）
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製程式碼
 COPY . .
 
-# 啟動 Flask
 CMD ["python", "app.py"]
