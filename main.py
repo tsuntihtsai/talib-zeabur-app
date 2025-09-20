@@ -1,48 +1,27 @@
-import os
-from flask import Flask, request, jsonify
-import pandas as pd
-import talib
+FROM python:3.11-slim
 
-app = Flask(__name__)
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
 
-@app.route("/")
-def hello():
-    return "TA-Lib service running"
+# 安裝必要工具並編譯 TA-Lib C library
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential wget curl autoconf automake libtool pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
-@app.route("/indicators", methods=["POST"])
-def indicators():
-    payload = request.get_json(force=True)
-    data = payload.get("data", [])
-    cols = ["date","volume","amount","open","high","low","close","diff","trades"]
-    df = pd.DataFrame(data, columns=cols)
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+ && tar -xzf ta-lib-0.4.0-src.tar.gz \
+ && cd ta-lib \
+ && ./configure --prefix=/usr \
+ && make \
+ && make install \
+ && cd .. \
+ && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-    # 數字欄位清理
-    for c in ["open","high","low","close","amount"]:
-        df[c] = df[c].astype(str).str.replace(",", "").astype(float)
-    df["volume"] = df["volume"].astype(str).str.replace(",", "").astype(float)
+COPY requirements.txt .
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
-    close = df["close"].values
-    high = df["high"].values
-    low = df["low"].values
-    volume = df["volume"].values
+COPY . .
 
-    # 常見指標計算
-    df["SMA5"] = talib.SMA(close, timeperiod=5)
-    df["SMA20"] = talib.SMA(close, timeperiod=20)
-    df["RSI14"] = talib.RSI(close, timeperiod=14)
-    macd, macd_signal, macd_hist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
-    df["MACD"] = macd
-    df["MACD_SIGNAL"] = macd_signal
-    df["MACD_HIST"] = macd_hist
-    upper, middle, lower = talib.BBANDS(close, timeperiod=20)
-    df["BB_UPPER"] = upper
-    df["BB_MIDDLE"] = middle
-    df["BB_LOWER"] = lower
-    df["ATR14"] = talib.ATR(high, low, close, timeperiod=14)
-    df["OBV"] = talib.OBV(close, volume)
-
-    return jsonify(df.tail(30).to_dict(orient="records"))
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+ENV PORT 8080
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1"]
