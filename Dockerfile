@@ -1,8 +1,17 @@
 # Dockerfile
 
+# Dockerfile
+
 # --- Stage 1: Builder ---
-# 使用一個包含建置工具的基礎映像檔來編譯 TA-Lib
-FROM python:3.10-slim-bullseye AS builder
+# 將 python:3.10-slim-bullseye 改為 python:3.12-slim-bullseye
+FROM python:3.12-slim-bullseye AS builder
+
+# ... (builder 階段的其他內容保持不變) ...
+
+# --- Stage 2: Runtime ---
+# 同樣，將這裡的 python:3.10-slim-bullseye 也改為 python:3.12-slim-bullseye
+FROM python:3.12-slim-bullseye
+
 
 # 設定環境變數，避免互動式提示
 ENV DEBIAN_FRONTEND=noninteractive
