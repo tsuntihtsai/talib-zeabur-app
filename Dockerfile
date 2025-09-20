@@ -1,27 +1,15 @@
+# 使用輕量級 Python 基底映像
 FROM python:3.11-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
+# 設定工作目錄
 WORKDIR /app
 
-# 安裝必要工具並編譯 TA-Lib C library
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential wget curl autoconf automake libtool pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
- && tar -xzf ta-lib-0.4.0-src.tar.gz \
- && cd ta-lib \
- && ./configure --prefix=/usr \
- && make \
- && make install \
- && cd .. \
- && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
-
+# 複製需求檔並安裝
 COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
+# 複製程式碼
 COPY . .
 
-ENV PORT 8080
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1"]
+# 啟動 Flask
+CMD ["python", "app.py"]
