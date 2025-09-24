@@ -62,6 +62,7 @@ def indicators():
 
     # 輸出 JSON（把日線與週線分開）
     result = {
+              "stock": df["stock"],
         "daily": df.reset_index().to_dict(orient="records"),
         "weekly": df_week.reset_index().to_dict(orient="records")
     }
