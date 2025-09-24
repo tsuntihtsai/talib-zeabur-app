@@ -6,66 +6,81 @@ app = Flask(__name__)
 
 @app.route("/indicators", methods=["POST"])
 def indicators():
-    data = request.json
+    payload = request.json
 
-    # 從 HTTP Header 或額外傳入 stock
-    stock_code = request.args.get("stock") or request.json.get("stock")
+    # 支援多檔股票：payload 可以是 list 或 dict
+    stocks = []
+    if isinstance(payload, dict):
+        # 單一股票
+        stocks.append(payload)
+    elif isinstance(payload, list):
+        # 多檔股票
+        stocks = payload
+    else:
+        return jsonify({"error": "無效的 JSON 結構"}), 400
 
-    # 處理單一物件輸入
-    if isinstance(data, dict):
-        data = [data]
+    results = []
 
-    df = pd.DataFrame(data)
+    for stock_item in stocks:
+        # 取得股票代碼與交易資料
+        stock_code = stock_item.get("stock")
+        data = stock_item.get("data")
 
-    if "close" not in df.columns or "date" not in df.columns:
-        return jsonify({"error": "請求中需要包含 'date' 與 'close' 欄位"}), 400
+        if not data or len(data) < 20:
+            # 至少需要 20 筆資料計算 MA20
+            results.append({
+                "stock": stock_code,
+                "error": f"資料筆數不足以計算技術指標，收到 {len(data) if data else 0} 筆"
+            })
+            continue
 
-    if len(df) < 20:
-        return jsonify({"error": f"資料筆數不足以計算技術指標。至少需要 20 筆，但只收到 {len(df)} 筆。"}), 400
+        df = pd.DataFrame(data)
 
-    # 轉換日期欄位並排序
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
-    df.set_index("date", inplace=True)
+        if "close" not in df.columns or "date" not in df.columns:
+            results.append({
+                "stock": stock_code,
+                "error": "資料缺少 'date' 或 'close' 欄位"
+            })
+            continue
 
-    # 日線指標
-    df["MA5"] = ta.sma(df["close"], length=5)
-    df["MA20"] = ta.sma(df["close"], length=20)
-    macd = ta.macd(df["close"])
-    rsi = ta.rsi(df["close"], length=14)
-    df = pd.concat([df, macd, rsi], axis=1)
+        # 轉換日期
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date")
+        df.set_index("date", inplace=True)
 
-    # 加股票代碼
-    df["stock"] = stock_code
+        # 日線技術指標
+        df["MA5"] = ta.sma(df["close"], length=5)
+        df["MA20"] = ta.sma(df["close"], length=20)
+        df = pd.concat([df, ta.macd(df["close"]), ta.rsi(df["close"], length=14)], axis=1)
 
-    # 週線資料
-    if not isinstance(df.index, pd.DatetimeIndex):
-        return jsonify({"error": "日期欄位轉換失敗，無法計算週線"}), 500
+        # 加股票代碼
+        df["stock"] = stock_code
 
-    df_week = df.resample("W-FRI").agg({
-        "open": "first",
-        "high": "max",
-        "low": "min",
-        "close": "last",
-        "volume": "sum" if "volume" in df.columns else "first"
-    }).dropna()
+        # 週線資料
+        df_week = df.resample("W-FRI").agg({
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum" if "volume" in df.columns else "first"
+        }).dropna()
 
-    if len(df_week) >= 20:
-        df_week["W_MA5"] = ta.sma(df_week["close"], length=5)
-        df_week["W_MA20"] = ta.sma(df_week["close"], length=20)
-        w_macd = ta.macd(df_week["close"])
-        w_rsi = ta.rsi(df_week["close"], length=14)
-        df_week = pd.concat([df_week, w_macd, w_rsi], axis=1)
+        if len(df_week) >= 20:
+            df_week["W_MA5"] = ta.sma(df_week["close"], length=5)
+            df_week["W_MA20"] = ta.sma(df_week["close"], length=20)
+            df_week = pd.concat([df_week, ta.macd(df_week["close"]), ta.rsi(df_week["close"], length=14)], axis=1)
 
-        # 週線也加股票代碼
         df_week["stock"] = stock_code
 
-    result = {
-        "daily": df.reset_index().to_dict(orient="records"),
-        "weekly": df_week.reset_index().to_dict(orient="records")
-    }
+        # 將結果加入 results
+        results.append({
+            "stock": stock_code,
+            "daily": df.reset_index().to_dict(orient="records"),
+            "weekly": df_week.reset_index().to_dict(orient="records")
+        })
 
-    return jsonify(result)
+    return jsonify(results)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
