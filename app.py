@@ -8,6 +8,9 @@ app = Flask(__name__)
 def indicators():
     data = request.json
 
+    # 從 HTTP Header 或額外傳入 stock
+    stock_code = request.args.get("stock") or request.json.get("stock")
+
     # ✨【核心修正 #1：處理單一物件輸入】✨
     # 檢查傳入的 data 是否為單一物件 (dict)，如果是，將其放入陣列中
     if isinstance(data, dict):
@@ -39,6 +42,8 @@ def indicators():
     rsi = ta.rsi(df["close"], length=14)
     df = pd.concat([df, macd, rsi], axis=1)
 
+       df["stock"] = stock_code  # 加股票代碼
+
     # ========== 週線資料 ==========
     # 確保 resample 前索引是 DatetimeIndex
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -61,11 +66,18 @@ def indicators():
         df_week = pd.concat([df_week, w_macd, w_rsi], axis=1)
 
     # 輸出 JSON（把日線與週線分開）
-    result = {
-              "stock": df["stock"],
-        "daily": df.reset_index().to_dict(orient="records"),
-        "weekly": df_week.reset_index().to_dict(orient="records")
-    }
+        df["stock"] = stock_code  # 加股票代碼
+
+        result = {
+            "daily": df.reset_index().to_dict(orient="records"),
+            "weekly": df.resample("W-FRI").agg({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum"
+            }).assign(stock=stock_code).to_dict(orient="records")
+        }
 
     return jsonify(result)
 
